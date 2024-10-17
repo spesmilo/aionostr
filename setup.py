@@ -21,8 +21,7 @@ test_requirements = [
 ]
 
 setup(
-    author="Dave St.Germain",
-    author_email="dave@st.germa.in",
+    author="The Electrum Developers",
     python_requires=">=3.8",
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
@@ -48,10 +47,11 @@ setup(
     include_package_data=True,
     keywords="aionostr",
     name="electrum-aionostr",
-    packages=find_packages(include=["aionostr", "aionostr.*"]),
+    packages=['electrum_aionostr'],
+    package_dir={'electrum_aionostr':'aionostr'},
     test_suite="tests",
     tests_require=test_requirements,
     url="https://github.com/spesmilo/electrum-aionostr",
-    version="0.0.2",
+    version="0.0.3",
     zip_safe=False,
 )
