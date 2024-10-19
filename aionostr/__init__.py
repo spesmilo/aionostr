@@ -1,7 +1,7 @@
 """Top-level package for aionostr."""
 
 __author__ = """The Electrum Developers"""
-__version__ = '0.0.3'
+__version__ = '0.0.4'
 
 import time
 from .relay import Manager, Relay
