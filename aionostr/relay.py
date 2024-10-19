@@ -221,8 +221,21 @@ class Manager:
     async def close(self):
         await self.broadcast('close')
 
-    async def add_event(self, event, check_response=False):
-        return await self.broadcast('add_event', event, check_response=check_response)
+    async def add_event(self, event, timeout=5):
+        """ waits until one of the tasks succeeds, or raises timeout"""
+        queue = asyncio.Queue()
+        tasks = []
+        async def f(relay):
+            try:
+                result = await relay.add_event(event, check_response=True)
+            except Exception as e:
+                self.log.info(f'add_event: failed with {relay.url}')
+                return
+            await queue.put(result)
+        for relay in self.relays:
+            tasks.append(asyncio.create_task(f(relay)))
+        result = await asyncio.wait_for(queue.get(), timeout=5)
+        return result
 
     def subscribe(self, sub_id: str, *filters):
         queues = []
