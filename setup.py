@@ -14,6 +14,7 @@ requirements = [
     "electrum_ecc",
     "websockets",
     "cryptography>=37.0.4",
+    "aiorpcx", # for taskgroup. remove when we use python 11
 ]
 
 test_requirements = [

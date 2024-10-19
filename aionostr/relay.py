@@ -3,6 +3,8 @@ import secrets
 import time
 import sys
 import logging
+import aiorpcx
+
 from contextlib import asynccontextmanager
 from collections import defaultdict, namedtuple
 from websockets import connect, exceptions
@@ -43,7 +45,7 @@ class Relay:
         self.connected = False
         self.connect_timeout = connect_timeout
 
-    async def connect(self, retries=5):
+    async def connect(self, taskgroup, retries=5):
         for i in range(retries):
             try:
                 async with timeout(self.connect_timeout):
@@ -55,7 +57,7 @@ class Relay:
         else:
             raise Exception(f"Cannot connect to {self.url}")
         if self.receive_task is None:
-            self.receive_task = asyncio.create_task(self._receive_messages())
+            self.receive_task = await taskgroup.spawn(self._receive_messages())
         await asyncio.sleep(0.01)
         self.connected = True
         self.log.info("Connected to %s", self.url)
@@ -117,9 +119,9 @@ class Relay:
             response = await self.event_adds.get()
             return response[1]
 
-    def subscribe(self, sub_id: str, *filters, queue=None):
+    async def subscribe(self, taskgroup, sub_id: str, *filters, queue=None):
         self.subscriptions[sub_id] = Subscription(filters=filters, queue=queue or asyncio.Queue())
-        asyncio.create_task(self.send(["REQ", sub_id, *filters]))
+        await taskgroup.spawn(self.send(["REQ", sub_id, *filters]))
         return self.subscriptions[sub_id].queue
 
     async def unsubscribe(self, sub_id):
@@ -168,6 +170,7 @@ class Manager:
         self.subscriptions = {}
         self.connected = False
         self._connectlock = asyncio.Lock()
+        self.taskgroup = aiorpcx.TaskGroup()
 
     @property
     def private_key(self):
@@ -197,26 +200,26 @@ class Manager:
         tasks = [func(queue) for queue in queues]
         await asyncio.gather(*tasks)
 
-
     async def broadcast(self, func, *args, **kwargs):
+        """ returns when all tasks completed. timeout is enforced """
         results = []
         for relay in self.relays:
-            results.append(asyncio.create_task(getattr(relay, func)(*args, **kwargs)))
+            coro = asyncio.wait_for(getattr(relay, func)(*args, **kwargs), timeout=5)
+            results.append(await self.taskgroup.spawn(coro))
 
         self.log.debug("Waiting for %s", func)
-        return_when = asyncio.ALL_COMPLETED if func == 'connect' else asyncio.FIRST_COMPLETED
-        return await asyncio.wait(results, return_when=return_when)
+        return await asyncio.wait(results, return_when=asyncio.ALL_COMPLETED)
 
     async def connect(self):
         async with self._connectlock:
             if not self.connected:
-                await self.broadcast('connect')
+                await self.broadcast('connect', self.taskgroup)
                 self.connected = True
                 tried = len(self.relays)
                 connected = [relay for relay in self.relays if relay.connected]
                 success = len(connected)
                 self.relays = connected
-                self.log.debug("Connected to %d out of %d relays", success, tried)
+                self.log.info("Connected to %d out of %d relays", success, tried)
 
     async def close(self):
         await self.broadcast('close')
@@ -233,16 +236,16 @@ class Manager:
                 return
             await queue.put(result)
         for relay in self.relays:
-            tasks.append(asyncio.create_task(f(relay)))
+            await self.taskgroup.spawn(f(relay))
         result = await asyncio.wait_for(queue.get(), timeout=5)
         return result
 
-    def subscribe(self, sub_id: str, *filters):
+    async def subscribe(self, sub_id: str, *filters):
         queues = []
         for relay in self.relays:
-            queues.append(relay.subscribe(sub_id, *filters))
+            queues.append(await relay.subscribe(self.taskgroup, sub_id, *filters))
         queue = asyncio.Queue()
-        self.subscriptions[sub_id] = asyncio.create_task(self.monitor_queues(queues, queue))
+        self.subscriptions[sub_id] = await self.taskgroup.spawn(self.monitor_queues(queues, queue))
         return queue
 
     async def unsubscribe(self, sub_id):
@@ -251,15 +254,18 @@ class Manager:
         del self.subscriptions[sub_id]
 
     async def __aenter__(self):
+        await self.taskgroup.__aenter__()
         await self.connect()
         return self
 
     async def __aexit__(self, ex_type, ex, tb):
         await self.close()
+        await self.taskgroup.cancel_remaining()
+        await self.taskgroup.__aexit__(ex_type, ex, tb)
 
     async def get_events(self, *filters, only_stored=True, single_event=False):
         sub_id = secrets.token_hex(4)
-        queue = self.subscribe(sub_id, *filters)
+        queue = await self.subscribe(sub_id, *filters)
         while True:
             event = await queue.get()
             if event is None:
