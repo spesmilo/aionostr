@@ -15,15 +15,6 @@ try:
 except ImportError:
     from json import dumps, loads
 
-if hasattr(asyncio, 'timeout'):
-    timeout = asyncio.timeout
-else:
-    # python < 3.11 does not have asyncio.timeout
-    # rather than re-implement it, we'll just do nothing
-    @asynccontextmanager
-    async def timeout(duration):
-        yield
-
 
 Subscription = namedtuple('Subscription', ['filters','queue'])
 
@@ -32,7 +23,7 @@ class Relay:
     """
     Interact with a relay
     """
-    def __init__(self, url, verbose=False, origin:str = '', private_key:str='', connect_timeout: float=2.0, log=None):
+    def __init__(self, url, verbose=False, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None):
         self.log = log or logging.getLogger(__name__)
         self.url = url
         self.ws = None
@@ -45,17 +36,17 @@ class Relay:
         self.connected = False
         self.connect_timeout = connect_timeout
 
-    async def connect(self, taskgroup, retries=5):
+    async def connect(self, taskgroup, retries=2):
         for i in range(retries):
             try:
-                async with timeout(self.connect_timeout):
-                    self.ws = await connect(self.url, origin=self.origin)
+                self.ws = await asyncio.wait_for(connect(self.url, origin=self.origin), self.connect_timeout)
             except:
                 await asyncio.sleep(0.2 * i)
             else:
                 break
         else:
-            raise Exception(f"Cannot connect to {self.url}")
+            self.log.info(f"Cannot connect to {self.url}")
+            return False
         if self.receive_task is None:
             self.receive_task = await taskgroup.spawn(self._receive_messages())
         await asyncio.sleep(0.01)
@@ -78,8 +69,7 @@ class Relay:
     async def _receive_messages(self):
         while True:
             try:
-                async with timeout(30.0):
-                    message = await self.ws.recv()
+                message = await asyncio.wait_for(self.ws.recv(), 30.0)
 
                 self.log.debug(message)
                 message = loads(message)
@@ -228,7 +218,7 @@ class Manager:
         """ waits until one of the tasks succeeds, or raises timeout"""
         queue = asyncio.Queue()
         tasks = []
-        async def f(relay):
+        async def _add_event(relay):
             try:
                 result = await relay.add_event(event, check_response=True)
             except Exception as e:
@@ -236,7 +226,7 @@ class Manager:
                 return
             await queue.put(result)
         for relay in self.relays:
-            await self.taskgroup.spawn(f(relay))
+            await self.taskgroup.spawn(_add_event(relay))
         result = await asyncio.wait_for(queue.get(), timeout=5)
         return result
 
