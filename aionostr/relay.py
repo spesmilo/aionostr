@@ -3,17 +3,14 @@ import secrets
 import time
 import sys
 import logging
+from json import dumps, loads
+
 import aiorpcx
 
-from contextlib import asynccontextmanager
 from collections import defaultdict, namedtuple
 from websockets import connect, exceptions
 from .event import Event
 
-try:
-    from rapidjson import dumps, loads
-except ImportError:
-    from json import dumps, loads
 
 
 Subscription = namedtuple('Subscription', ['filters','queue'])
@@ -59,11 +56,11 @@ class Relay:
             self.log.debug("resubscribing to %s", sub.filters)
             await self.send(["REQ", sub_id, *sub.filters])
 
-    async def close(self):
+    async def close(self, taskgroup):
         if self.receive_task:
-            self.receive_task.cancel()
+            self.receive_task.cancel() # fixme: this will cancel taskgroup
         if self.ws:
-            await self.ws.close()
+            await taskgroup.spawn(self.ws.close())
         self.connected = False
 
     async def _receive_messages(self):
@@ -212,7 +209,7 @@ class Manager:
                 self.log.info("Connected to %d out of %d relays", success, tried)
 
     async def close(self):
-        await self.broadcast('close')
+        await self.broadcast('close', self.taskgroup)
 
     async def add_event(self, event, timeout=5):
         """ waits until one of the tasks succeeds, or raises timeout"""
