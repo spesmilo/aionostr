@@ -84,7 +84,7 @@ class Relay:
                     sys.stderr.write(message)
             except asyncio.CancelledError:
                 return
-            except exceptions.ConnectionClosedError:
+            except exceptions.ConnectionClosed:
                 await self.reconnect()
             except asyncio.TimeoutError:
                 continue
