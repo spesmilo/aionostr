@@ -49,9 +49,11 @@ class Relay:
         await asyncio.sleep(0.01)
         self.connected = True
         self.log.info("Connected to %s", self.url)
+        return True
 
     async def reconnect(self):
-        await self.connect(20)
+        while not await self.connect(20):
+            await asyncio.sleep(60*30)
         for sub_id, sub in self.subscriptions.items():
             self.log.debug("resubscribing to %s", sub.filters)
             await self.send(["REQ", sub_id, *sub.filters])
