@@ -96,7 +96,7 @@ class Relay:
     async def send(self, message):
         try:
             await self.ws.send(dumps(message))
-        except exceptions.ConnectionClosedError:
+        except exceptions.ConnectionClosed:
             await self.reconnect()
             await self.ws.send(dumps(message))
 
