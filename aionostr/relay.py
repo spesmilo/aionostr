@@ -20,7 +20,7 @@ class Relay:
     """
     Interact with a relay
     """
-    def __init__(self, url, verbose=False, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None):
+    def __init__(self, url, verbose=False, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None):
         self.log = log or logging.getLogger(__name__)
         self.url = url
         self.ws = None
@@ -32,11 +32,12 @@ class Relay:
         self.origin = origin or url
         self.connected = False
         self.connect_timeout = connect_timeout
+        self.ssl_context = ssl_context
 
     async def connect(self, taskgroup, retries=2):
         for i in range(retries):
             try:
-                self.ws = await asyncio.wait_for(connect(self.url, origin=self.origin), self.connect_timeout)
+                self.ws = await asyncio.wait_for(connect(self.url, origin=self.origin, ssl=self.ssl_context), self.connect_timeout)
             except:
                 await asyncio.sleep(0.2 * i)
             else:
@@ -151,9 +152,9 @@ class Manager:
     """
     Manage a collection of relays
     """
-    def __init__(self, relays=None, verbose=False, origin='aionostr', private_key=None, log=None):
+    def __init__(self, relays=None, verbose=False, origin='aionostr', private_key=None, log=None, ssl_context=None):
         self.log = log or logging.getLogger(__name__)
-        self.relays = [Relay(r, origin=origin, private_key=private_key, log=log) for r in (relays or [])]
+        self.relays = [Relay(r, origin=origin, private_key=private_key, log=log, ssl_context=ssl_context) for r in (relays or [])]
         self.subscriptions = {}
         self.connected = False
         self._connectlock = asyncio.Lock()
