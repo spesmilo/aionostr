@@ -5,6 +5,7 @@ import secrets
 import base64
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import padding
 from hashlib import sha256
 import electrum_ecc as ecc
@@ -78,7 +79,7 @@ class PrivateKey:
 
         iv = secrets.token_bytes(16)
         cipher = Cipher(
-            algorithms.AES(self.compute_shared_secret(public_key_hex)), modes.CBC(iv)
+            algorithms.AES(self.compute_shared_secret(public_key_hex)), modes.CBC(iv), default_backend()
         )
 
         encryptor = cipher.encryptor()
@@ -92,7 +93,7 @@ class PrivateKey:
 
         iv = base64.b64decode(encoded_iv)
         cipher = Cipher(
-            algorithms.AES(self.compute_shared_secret(public_key_hex)), modes.CBC(iv)
+            algorithms.AES(self.compute_shared_secret(public_key_hex)), modes.CBC(iv), default_backend()
         )
         encrypted_content = base64.b64decode(encoded_content)
 
