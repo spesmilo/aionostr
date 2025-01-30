@@ -16,6 +16,8 @@ from . import bech32
 
 class PublicKey:
     def __init__(self, raw_bytes: bytes) -> None:
+        assert isinstance(raw_bytes, bytes), type(raw_bytes)
+        assert len(raw_bytes) == 32, len(raw_bytes)
         self.raw_bytes = raw_bytes
 
     def bech32(self) -> str:
@@ -26,7 +28,7 @@ class PublicKey:
         return self.raw_bytes.hex()
 
     def verify_signed_message_hash(self, hash: str, sig: str) -> bool:
-        return ecc.ECPubkey(self.raw_bytes).schnorr_verify(
+        return ecc.ECPubkey(b'\x02' + self.raw_bytes).schnorr_verify(
             bytes.fromhex(sig), bytes.fromhex(hash)
         )
 
