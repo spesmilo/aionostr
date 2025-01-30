@@ -3,10 +3,10 @@ forked from https://github.com/jeffthibault/python-nostr.git
 """
 import secrets
 import base64
+from hashlib import sha256
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
-from hashlib import sha256
 import electrum_ecc as ecc
 
 from .delegation import Delegation
@@ -40,7 +40,7 @@ class PublicKey:
 
 class PrivateKey:
     def __init__(self, raw_secret: bytes = None) -> None:
-        if not raw_secret is None:
+        if raw_secret is not None:
             self.raw_secret = raw_secret
         else:
             self.raw_secret = secrets.token_bytes(32)
@@ -61,10 +61,6 @@ class PrivateKey:
 
     def hex(self) -> str:
         return self.raw_secret.hex()
-
-    def tweak_add(self, scalar: bytes) -> bytes:
-        sk = ecc.ECPrivkey(self.raw_secret)
-        return sk.add(scalar)
 
     def compute_shared_secret(self, public_key_hex: str) -> bytes:
         privkey = ecc.ECPrivkey(self.raw_secret)
