@@ -1,0 +1,31 @@
+unittests_task:
+  container:
+    image: $ELECTRUM_IMAGE
+    cpu: 1
+    memory: 1G
+  matrix:
+    - name: "unittests: Python $ELECTRUM_PYTHON_VERSION"
+      env:
+        ELECTRUM_IMAGE: python:$ELECTRUM_PYTHON_VERSION
+      matrix:
+        - env:
+            ELECTRUM_PYTHON_VERSION: 3.8
+        - env:
+            ELECTRUM_PYTHON_VERSION: 3.9
+        - env:
+            ELECTRUM_PYTHON_VERSION: 3.10
+        - env:
+            ELECTRUM_PYTHON_VERSION: 3.11
+        - env:
+            ELECTRUM_PYTHON_VERSION: 3.12
+        - env:
+            ELECTRUM_PYTHON_VERSION: 3.13
+  install_script:
+    - pip install pytest-cov
+    - pip install Click
+    - pip install .
+  version_script:
+    - python3 --version
+  script:
+    - pytest tests --cov=aionostr
+    # fixme: ^ coverage does not work... probably because of electrum_aionostr vs aionostr naming?
