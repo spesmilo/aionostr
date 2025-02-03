@@ -4,6 +4,7 @@ __author__ = """The Electrum Developers"""
 __version__ = '0.0.6'
 
 import time
+
 from .relay import Manager, Relay
 
 
