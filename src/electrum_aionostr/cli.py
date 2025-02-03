@@ -241,7 +241,7 @@ def gen():
 @click.option('-s', '--setup/--no-setup', help='add events to setup', is_flag=True, default=True)
 @async_cmd
 async def bench(relay, function, concurrency, setup, num_events=1000):
-    from aionostr import benchmark
+    from electrum_aionostr import benchmark
     func = getattr(benchmark, function)
 
     args = [relay]
