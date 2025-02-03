@@ -42,3 +42,11 @@ NOSTR_KEY=`aionostr gen | head -1`
 
 This package was created with [Cookiecutter](https://github.com/audreyr/cookiecutter)
 and the [audreyr/cookiecutter-pypackage](https://github.com/audreyr/cookiecutter-pypackage) project template.
+
+
+### Maintainer notes
+
+To build sdist for PyPI:
+```
+$ ./contrib/release.sh
+```
