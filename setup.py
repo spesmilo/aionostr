@@ -4,22 +4,22 @@
 
 from setuptools import setup, find_packages
 
-with open("README.rst") as readme_file:
+with open("README.md") as readme_file:
     readme = readme_file.read()
-
-with open("HISTORY.rst") as history_file:
-    history = history_file.read()
 
 requirements = [
     "electrum_ecc",
     "websockets",
     "cryptography>=2.8",
-    "aiorpcx", # for taskgroup. remove when we use python 11
+    "aiorpcx>=0.22.0,<0.25",  # for taskgroup. remove when we use python 3.11
 ]
 
-test_requirements = [
-    "pytest>=3",
-]
+extras_require = {
+    'tests': [
+        'pytest-cov',
+        'Click',
+    ],
+}
 
 setup(
     author="The Electrum Developers",
@@ -35,6 +35,7 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
     description="asyncio nostr client",
     entry_points={
@@ -43,15 +44,14 @@ setup(
         ],
     },
     install_requires=requirements,
+    extras_require=extras_require,
     license="BSD license",
-    long_description=readme + "\n\n" + history,
+    long_description=readme,
     include_package_data=True,
     keywords="aionostr",
     name="electrum-aionostr",
     packages=['electrum_aionostr'],
-    package_dir={'electrum_aionostr':'aionostr'},
-    test_suite="tests",
-    tests_require=test_requirements,
+    package_dir={'electrum_aionostr': 'aionostr'},
     url="https://github.com/spesmilo/electrum-aionostr",
     version="0.0.6",
     zip_safe=False,

@@ -1,2 +1,0 @@
-websockets
-cryptography>=2.8

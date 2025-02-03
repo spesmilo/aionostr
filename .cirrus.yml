@@ -21,9 +21,7 @@ unittests_task:
         - env:
             ELECTRUM_PYTHON_VERSION: 3.13
   install_script:
-    - pip install pytest-cov
-    - pip install Click
-    - pip install .
+    - pip install ".[tests]"
   version_script:
     - python3 --version
   script:
