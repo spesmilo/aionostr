@@ -4,13 +4,12 @@ import time
 import sys
 import logging
 from json import dumps, loads
+from collections import defaultdict, namedtuple
+from websockets import connect, exceptions
 
 import aiorpcx
 
-from collections import defaultdict, namedtuple
-from websockets import connect, exceptions
 from .event import Event
-
 
 
 Subscription = namedtuple('Subscription', ['filters','queue'])

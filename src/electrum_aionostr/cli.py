@@ -1,12 +1,14 @@
 """Console script for aionostr."""
 import sys
-import click
 import asyncio
 import time
 import datetime
 import os
 import logging
 from functools import wraps
+
+import click
+
 from . import get_anything, add_event
 
 try:

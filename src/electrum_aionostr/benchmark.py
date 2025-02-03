@@ -11,12 +11,13 @@ Available benchmarks:
 import asyncio
 import secrets
 import traceback
-
 from time import perf_counter, time
-from aionostr.event import Event
-from aionostr.key import PrivateKey
-from aionostr.relay import Relay, loads, dumps
+
 from websockets import connect
+
+from .event import Event
+from .key import PrivateKey
+from .relay import Relay, loads, dumps
 
 
 class catchtime:

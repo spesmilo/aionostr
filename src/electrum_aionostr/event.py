@@ -4,9 +4,11 @@ forked from https://github.com/jeffthibault/python-nostr.git
 import time
 import functools
 from enum import IntEnum
+from hashlib import sha256
+
 import electrum_ecc as ecc
 from electrum_ecc import ECPrivkey, ECPubkey
-from hashlib import sha256
+
 
 try:
     import rapidjson

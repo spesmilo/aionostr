@@ -4,7 +4,7 @@ Usage
 
 To use aionostr in a project::
 
-    import aionostr
+    import electrum_aionostr
 
 The high-level API looks like this::
 
