@@ -38,6 +38,9 @@ tests = [
     "pytest-cov",
     "Click",
 ]
+cli = [
+    "Click",
+]
 
 [project.urls]
 Homepage = "https://github.com/spesmilo/aionostr"
