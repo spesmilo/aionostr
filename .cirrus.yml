@@ -25,5 +25,4 @@ unittests_task:
   version_script:
     - python3 --version
   script:
-    - pytest tests --cov=aionostr
-    # fixme: ^ coverage does not work... probably because of electrum_aionostr vs aionostr naming?
+    - pytest tests --cov=electrum_aionostr
