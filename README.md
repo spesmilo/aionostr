@@ -14,7 +14,7 @@ Language: Python (>= 3.8)
 [![Build Status](https://api.cirrus-ci.com/github/spesmilo/aionostr.svg?branch=electrum)](https://cirrus-ci.com/github/spesmilo/aionostr)
 
 
-This is a fork of aionostr that does not require Coincurve
+This is a fork of [aionostr](https://github.com/davestgermain/aionostr) that does not require Coincurve.
 
 
 ## Features

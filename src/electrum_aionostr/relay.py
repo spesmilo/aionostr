@@ -5,8 +5,8 @@ import sys
 import logging
 from json import dumps, loads
 from collections import defaultdict, namedtuple
-from websockets import connect, exceptions
 
+from websockets import connect, exceptions
 import aiorpcx
 
 from .event import Event
