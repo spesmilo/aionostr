@@ -46,7 +46,5 @@ and the [audreyr/cookiecutter-pypackage](https://github.com/audreyr/cookiecutter
 
 ### Maintainer notes
 
-To build sdist for PyPI:
-```
-$ ./contrib/release.sh
-```
+To build sdist for PyPI,
+see [`contrib/sdist/`](contrib/sdist).
