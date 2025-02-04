@@ -1,7 +1,7 @@
 """Top-level package for aionostr."""
 
 __author__ = """The Electrum Developers"""
-__version__ = '0.0.6'
+__version__ = '0.0.7'
 
 import time
 
