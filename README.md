@@ -46,5 +46,10 @@ and the [audreyr/cookiecutter-pypackage](https://github.com/audreyr/cookiecutter
 
 ### Maintainer notes
 
-To build sdist for PyPI,
-see [`contrib/sdist/`](contrib/sdist).
+Release checklist:
+- bump `__version__` in `__init__.py`
+- write changelog?
+- `$ git tag -s $VERSION -m "$VERSION"`
+- build sdist (see [`contrib/sdist/`](contrib/sdist)):
+  - `$ ELECBUILD_COMMIT=HEAD ELECBUILD_NOCACHE=1 ./contrib/sdist/build.sh`
+- `$ python3 -m twine upload dist/*`
