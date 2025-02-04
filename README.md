@@ -52,4 +52,4 @@ Release checklist:
 - `$ git tag -s $VERSION -m "$VERSION"`
 - build sdist (see [`contrib/sdist/`](contrib/sdist)):
   - `$ ELECBUILD_COMMIT=HEAD ELECBUILD_NOCACHE=1 ./contrib/sdist/build.sh`
-- `$ python3 -m twine upload dist/*`
+- `$ python3 -m twine upload dist/$DISTNAME`
