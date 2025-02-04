@@ -43,8 +43,8 @@ cli = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/spesmilo/aionostr"
-Repository = "https://github.com/spesmilo/aionostr"
+Homepage = "https://github.com/spesmilo/electrum-aionostr"
+Repository = "https://github.com/spesmilo/electrum-aionostr"
 
 [project.scripts]
 aionostr = "electrum_aionostr.cli:main"

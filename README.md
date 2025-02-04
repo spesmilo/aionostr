@@ -11,7 +11,7 @@ Language: Python (>= 3.8)
 
 
 [![Latest PyPI package](https://badge.fury.io/py/electrum-aionostr.svg)](https://pypi.org/project/electrum-aionostr/)
-[![Build Status](https://api.cirrus-ci.com/github/spesmilo/aionostr.svg?branch=electrum)](https://cirrus-ci.com/github/spesmilo/aionostr)
+[![Build Status](https://api.cirrus-ci.com/github/spesmilo/electrum-aionostr.svg)](https://cirrus-ci.com/github/spesmilo/electrum-aionostr)
 
 
 This is a fork of [aionostr](https://github.com/davestgermain/aionostr) that does not require Coincurve.
@@ -36,12 +36,6 @@ Set environment variables:
 NOSTR_RELAYS=wss://brb.io,wss://nostr.mom
 NOSTR_KEY=`aionostr gen | head -1`
 ```
-
-
-## Credits
-
-This package was created with [Cookiecutter](https://github.com/audreyr/cookiecutter)
-and the [audreyr/cookiecutter-pypackage](https://github.com/audreyr/cookiecutter-pypackage) project template.
 
 
 ### Maintainer notes
