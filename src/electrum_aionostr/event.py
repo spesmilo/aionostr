@@ -113,8 +113,10 @@ class Event:
         self.sig = sig.hex()
 
     def verify(self) -> bool:
+        if not self.sig:
+            return False
         try:
-            pub_key = ECPubkey(bytes.fromhex(self.pubkey))
+            pub_key = ECPubkey(bytes.fromhex("02" + self.pubkey))
         except Exception as e:
             return False
         event_id = Event.compute_id(
@@ -132,7 +134,7 @@ class Event:
                 to_sign = (
                     ":".join(["nostr", "delegation", self.pubkey, conditions])
                 ).encode("utf8")
-                delegation_verified = PublicKey(bytes.fromhex(delegator)).verify(
+                delegation_verified = ECPubkey(bytes.fromhex("02" + delegator)).schnorr_verify(
                     bytes.fromhex(sig),
                     sha256(to_sign).digest(),
                 )
