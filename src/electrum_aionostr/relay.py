@@ -261,6 +261,9 @@ class Manager:
                 if only_stored:
                     break
             else:
+                if not event.verify():
+                    self.log.debug(f"event {event.id} failed signature verification")
+                    continue
                 yield event
                 if single_event:
                     break

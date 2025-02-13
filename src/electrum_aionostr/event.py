@@ -54,7 +54,7 @@ class Event:
     ) -> None:
         if not isinstance(content, str):
             raise TypeError("Argument 'content' must be of type str")
-
+        assert len(pubkey) == 64, f"got pubkey with unexpected len={len(pubkey)}, expected 64 char x-only hex"
         self.pubkey = pubkey
         self.content = content
         self.created_at = created_at or int(time.time())
