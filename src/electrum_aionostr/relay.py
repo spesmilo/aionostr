@@ -5,8 +5,10 @@ import sys
 import logging
 from json import dumps, loads
 from collections import defaultdict, namedtuple
+from typing import Optional
 
-from websockets import connect, exceptions
+from aiohttp import ClientSession, client_exceptions
+from aiohttp_socks import ProxyConnector
 import aiorpcx
 
 from .event import Event
@@ -19,9 +21,10 @@ class Relay:
     """
     Interact with a relay
     """
-    def __init__(self, url, verbose=False, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None):
+    def __init__(self, url, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None, client=None):
         self.log = log or logging.getLogger(__name__)
         self.url = url
+        self.client = client
         self.ws = None
         self.receive_task = None
         self.subscriptions = defaultdict(lambda: Subscription(filters=[], queue=asyncio.Queue()))
@@ -33,45 +36,55 @@ class Relay:
         self.connect_timeout = connect_timeout
         self.ssl_context = ssl_context
 
-    async def connect(self, taskgroup, retries=2):
+    async def connect(self, taskgroup = None, retries=2):
         for i in range(retries):
             try:
-                self.ws = await asyncio.wait_for(connect(self.url, origin=self.origin, ssl=self.ssl_context), self.connect_timeout)
-            except:
-                await asyncio.sleep(0.2 * i)
+                self.ws = await asyncio.wait_for(
+                    self.client.ws_connect(
+                        url=self.url,
+                        origin=self.origin,
+                        ssl=self.ssl_context
+                    ),
+                    self.connect_timeout)
+            except Exception as e:
+                self.log.debug(f"Exception on connect: {e}")
+                await asyncio.sleep(i ** 2)
             else:
                 break
         else:
             self.log.info(f"Cannot connect to {self.url}")
             return False
-        if self.receive_task is None:
+        if self.receive_task is None and taskgroup:
             self.receive_task = await taskgroup.spawn(self._receive_messages())
+        elif self.receive_task is None:
+            self.receive_task = asyncio.create_task(self._receive_messages())
         await asyncio.sleep(0.01)
         self.connected = True
         self.log.info("Connected to %s", self.url)
         return True
 
     async def reconnect(self):
-        while not await self.connect(20):
+        while not await self.connect(taskgroup=None, retries=20):
             await asyncio.sleep(60*30)
         for sub_id, sub in self.subscriptions.items():
             self.log.debug("resubscribing to %s", sub.filters)
             await self.send(["REQ", sub_id, *sub.filters])
 
-    async def close(self, taskgroup):
+    async def close(self, taskgroup = None):
         if self.receive_task:
             self.receive_task.cancel() # fixme: this will cancel taskgroup
-        if self.ws:
+        if self.ws and taskgroup:
             await taskgroup.spawn(self.ws.close())
+        elif self.ws:
+            await self.ws.close()
         self.connected = False
 
     async def _receive_messages(self):
         while True:
             try:
-                message = await asyncio.wait_for(self.ws.recv(), 30.0)
+                message = await asyncio.wait_for(self.ws.receive_json(), 30.0)
 
                 self.log.debug(message)
-                message = loads(message)
                 if message[0] == 'EVENT':
                     await self.subscriptions[message[1]].queue.put(Event(**message[2]))
                 elif message[0] == 'EOSE':
@@ -86,19 +99,20 @@ class Relay:
                     sys.stderr.write(message)
             except asyncio.CancelledError:
                 return
-            except exceptions.ConnectionClosed:
+            except client_exceptions.WSMessageTypeError:  #  raised by receive_json when connection is closed
                 await self.reconnect()
             except asyncio.TimeoutError:
                 continue
             except:
                 import traceback; traceback.print_exc()
+                await asyncio.sleep(5)
 
     async def send(self, message):
         try:
-            await self.ws.send(dumps(message))
-        except exceptions.ConnectionClosed:
+            await self.ws.send_str(dumps(message))
+        except client_exceptions.ClientConnectionError:
             await self.reconnect()
-            await self.ws.send(dumps(message))
+            await self.ws.send_str(dumps(message))
 
     async def add_event(self, event, check_response=False):
         if isinstance(event, Event):
@@ -153,9 +167,26 @@ class Manager:
     """
     Manage a collection of relays
     """
-    def __init__(self, relays=None, verbose=False, origin='aionostr', private_key=None, log=None, ssl_context=None):
+    def __init__(self,
+                 relays=None, verbose=False,
+                 origin='aionostr',
+                 private_key=None,
+                 log=None,
+                 ssl_context=None,
+                 proxy: Optional[ProxyConnector]=None):
         self.log = log or logging.getLogger(__name__)
-        self.relays = [Relay(r, origin=origin, private_key=private_key, log=log, ssl_context=ssl_context) for r in (relays or [])]
+        self.proxy = proxy
+        self.client = ClientSession(connector=proxy)
+        connect_timeout = 1.0 if not proxy else 5.0
+        self.relays = [Relay(
+            r,
+            origin=origin,
+            private_key=private_key,
+            log=log,
+            ssl_context=ssl_context,
+            client=self.client,
+            connect_timeout=connect_timeout)
+            for r in (relays or [])]
         self.subscriptions = {}
         self.connected = False
         self._connectlock = asyncio.Lock()
@@ -193,9 +224,12 @@ class Manager:
         """ returns when all tasks completed. timeout is enforced """
         results = []
         for relay in self.relays:
-            coro = asyncio.wait_for(getattr(relay, func)(*args, **kwargs), timeout=5)
+            timeout = 5 if not self.proxy else 15
+            coro = asyncio.wait_for(getattr(relay, func)(*args, **kwargs), timeout=timeout)
             results.append(await self.taskgroup.spawn(coro))
 
+        if not results:
+            return
         self.log.debug("Waiting for %s", func)
         return await asyncio.wait(results, return_when=asyncio.ALL_COMPLETED)
 
@@ -212,11 +246,11 @@ class Manager:
 
     async def close(self):
         await self.broadcast('close', self.taskgroup)
+        await self.client.close()
 
     async def add_event(self, event, timeout=5):
         """ waits until one of the tasks succeeds, or raises timeout"""
         queue = asyncio.Queue()
-        tasks = []
         async def _add_event(relay):
             try:
                 result = await relay.add_event(event, check_response=True)
