@@ -13,7 +13,8 @@ import secrets
 import traceback
 from time import perf_counter, time
 
-from websockets import connect
+from aiohttp import ClientSession
+import logging
 
 from .event import Event
 from .key import PrivateKey
@@ -54,25 +55,24 @@ def make_events(num_events):
 
 
 async def adds_per_second(url, num_events=100):
-    relay = Relay(url)
     events = make_events(num_events)
-    async with relay:
-        with catchtime() as timer:
-            for e in events:
-                await relay.add_event(e, check_response=True)
-                timer += 1
+    async with ClientSession() as client:
+        relay = Relay(url, client=client)
+        async with relay:
+            with catchtime() as timer:
+                for e in events:
+                    await relay.add_event(e, check_response=True)
+                    timer += 1
     print(f"\tAdd: took {timer.duration:.2f} seconds. {timer.throughput():.1f}/sec")
     return timer.throughput()
 
 
 async def events_per_second(url, kind=9999, limit=500, duration=20, id=None, **kwargs):
     query = {"kinds": [kind], "limit": limit}
-    query_str = dumps(["REQ", "bench", query])
-    query_close = dumps(["CLOSE", "bench"])
-    total_bytes = 0
-    async with connect(url) as ws:
-        print(f"connected {id}")
-        timer, total_bytes = await asyncio.wait_for(_make_requests(ws, query, limit, duration), timeout=duration+1)
+    async with ClientSession() as client:
+        async with client.ws_connect(url) as ws:
+            print(f"connected {id}")
+            timer, total_bytes = await asyncio.wait_for(_make_requests(ws, query, limit, duration), timeout=duration+1)
 
     bps = (total_bytes / timer.duration) / 1024
     print(
@@ -86,8 +86,8 @@ async def _make_requests(ws, query, limit, duration):
     stoptime = perf_counter() + duration
     query_str = dumps(["REQ", "bench", query])
     query_close = dumps(["CLOSE", "bench"])
-    send = ws.send
-    recv = ws.recv
+    send = ws.send_str
+    recv = ws.receive_str
     with catchtime() as timer:
         while perf_counter() < stoptime:
             try:
@@ -115,7 +115,8 @@ async def _make_requests(ws, query, limit, duration):
 
 async def req_per_second(url, kind=9999, limit=50, duration=20, id=0):
     query = {"kinds": [kind], "limit": limit}
-    async with connect(url) as ws:
+    client = ClientSession()
+    async with client.ws_connect(url) as ws:
         print(f"connected {id}")
         timer, total_bytes = await asyncio.wait_for(_make_requests(ws, query, limit, duration), timeout=duration+1)
 
