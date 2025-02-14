@@ -5,7 +5,8 @@ import sys
 import logging
 from json import dumps, loads
 from collections import defaultdict, namedtuple
-from typing import Optional
+from typing import Optional, Iterable, Dict, List, Set, Coroutine, Any
+from dataclasses import dataclass
 
 from aiohttp import ClientSession, client_exceptions
 from aiohttp_socks import ProxyConnector
@@ -13,9 +14,16 @@ import aiorpcx
 
 from .event import Event
 
-
+# Subscription used inside Relay
 Subscription = namedtuple('Subscription', ['filters','queue'])
 
+# Subscription used inside Manager,
+@dataclass
+class ManagerSubscription:
+    output_queue: asyncio.Queue  # queue collects all events from all relays
+    filters: tuple[Any, ...]  # filters used to subscribe
+    seen_events: Set[bytes]  # event ids we have seen
+    monitor: ... # monitoring task
 
 class Relay:
     """
@@ -52,12 +60,14 @@ class Relay:
                     self.connect_timeout)
             except Exception as e:
                 self.log.debug(f"Exception on connect: {e!r}")
-                await self.ws.close()
+                if self.ws:
+                    await self.ws.close()
                 await asyncio.sleep(i ** 2)
             else:
                 break
         else:
             self.log.info(f"Cannot connect to {self.url}")
+            await self.client.close()
             return False
         if self.receive_task is None and taskgroup:
             self.receive_task = await taskgroup.spawn(self._receive_messages())
@@ -179,15 +189,18 @@ class Manager:
     Manage a collection of relays
     """
     def __init__(self,
-                 relays=None, verbose=False,
+                 relays=None,
                  origin='aionostr',
                  private_key=None,
                  log=None,
                  ssl_context=None,
                  proxy: Optional[ProxyConnector]=None):
         self.log = log or logging.getLogger(__name__)
-        self.proxy = proxy
-        connect_timeout = 1.0 if not proxy else 5.0
+        self._proxy = proxy
+        self._connect_timeout = 1.0 if not proxy else 5.0
+        self._ssl_context = ssl_context
+        self._private_key = private_key
+        self._origin = origin
         self.relays = [Relay(
             r,
             origin=origin,
@@ -195,16 +208,17 @@ class Manager:
             log=log,
             ssl_context=ssl_context,
             proxy=proxy,
-            connect_timeout=connect_timeout)
+            connect_timeout=self._connect_timeout)
             for r in (relays or [])]
-        self.subscriptions = {}
+        self.subscriptions = {}  # type: Dict[str, ManagerSubscription]
+        self._subscription_lock = asyncio.Lock()
         self.connected = False
         self._connectlock = asyncio.Lock()
         self.taskgroup = aiorpcx.TaskGroup()
 
     @property
     def private_key(self):
-        return None
+        return self._private_key
 
     @private_key.setter
     def private_key(self, pk):
@@ -214,8 +228,8 @@ class Manager:
     def add(self, url, **kwargs):
         self.relays.append(Relay(url, **kwargs))
 
-    async def monitor_queues(self, queues, output):
-        seen = set()
+    @staticmethod
+    async def monitor_queues(queues, output, seen: Set[bytes]):
         async def func(queue):
             while True:
                 result = await queue.get()
@@ -228,13 +242,16 @@ class Manager:
                     await output.put(None)
 
         tasks = [func(queue) for queue in queues]
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            return
 
-    async def broadcast(self, func, *args, **kwargs):
+    async def broadcast(self, relays, func, *args, **kwargs):
         """ returns when all tasks completed. timeout is enforced """
         results = []
-        for relay in self.relays:
-            timeout = 5 if not self.proxy else 15
+        timeout = 5 if not self._proxy else 15
+        for relay in relays:
             coro = asyncio.wait_for(getattr(relay, func)(*args, **kwargs), timeout=timeout)
             results.append(await self.taskgroup.spawn(coro))
 
@@ -246,7 +263,7 @@ class Manager:
     async def connect(self):
         async with self._connectlock:
             if not self.connected:
-                await self.broadcast('connect', self.taskgroup)
+                await self.broadcast(self.relays, 'connect', self.taskgroup)
                 self.connected = True
                 tried = len(self.relays)
                 connected = [relay for relay in self.relays if relay.connected]
@@ -255,9 +272,7 @@ class Manager:
                 self.log.info("Connected to %d out of %d relays", success, tried)
 
     async def close(self):
-        await self.broadcast('close', self.taskgroup)
-        for relay in self.relays:
-            await relay.close()
+        await self.broadcast(self.relays, 'close', self.taskgroup)
         await self.taskgroup.cancel_remaining()
 
     async def add_event(self, event, timeout=5):
@@ -272,21 +287,92 @@ class Manager:
             await queue.put(result)
         for relay in self.relays:
             await self.taskgroup.spawn(_add_event(relay))
-        result = await asyncio.wait_for(queue.get(), timeout=5)
+        result = await asyncio.wait_for(queue.get(), timeout=timeout)
         return result
 
     async def subscribe(self, sub_id: str, *filters):
-        queues = []
-        for relay in self.relays:
-            queues.append(await relay.subscribe(self.taskgroup, sub_id, *filters))
-        queue = asyncio.Queue()
-        self.subscriptions[sub_id] = await self.taskgroup.spawn(self.monitor_queues(queues, queue))
-        return queue
+        """Apply the given filter to all relays and return a queue that collects incoming events"""
+        relay_queues = []
+        async with self._subscription_lock:
+            for relay in self.relays:
+                if sub_id not in relay.subscriptions:
+                    relay_queues.append(await relay.subscribe(self.taskgroup, sub_id, *filters))
+                else:  # relay is already subscribed to this sub_id
+                    relay_queues.append(relay.subscriptions[sub_id].queue)
+
+            if not sub_id in self.subscriptions:  # create new output queue
+                output_queue = asyncio.Queue()
+                seen_events = set()
+                subscription = ManagerSubscription(
+                    monitor=await self.taskgroup.spawn(self.monitor_queues(relay_queues, output_queue, seen_events)),
+                    filters=filters,
+                    output_queue=output_queue,
+                    seen_events=seen_events)
+                self.subscriptions[sub_id] = subscription
+            else:  # update existing subscription
+                subscription = self.subscriptions[sub_id]
+                subscription.monitor.cancel()  # stop the old monitoring task
+                output_queue = subscription.output_queue
+                subscription.monitor = await self.taskgroup.spawn(  # start a new monitoring task
+                    self.monitor_queues(
+                        relay_queues,
+                        output_queue,
+                        subscription.seen_events)
+                )
+        return output_queue
 
     async def unsubscribe(self, sub_id):
-        await self.broadcast('unsubscribe', sub_id)
-        self.subscriptions[sub_id].cancel()
-        del self.subscriptions[sub_id]
+        async with self._subscription_lock:
+            await self.broadcast(self.relays, 'unsubscribe', sub_id)
+            self.subscriptions[sub_id].monitor.cancel()
+            del self.subscriptions[sub_id]
+
+    async def update_relays(self, updated_relay_list: Iterable[str]) -> None:
+        """Dynamically update the relays of an existing Manager instance"""
+        if not self.connected:
+            raise NotInitialized("Manager is not connected")
+
+        changes: bool = False
+        updated_relay_list: Set[str] = set(url.strip().rstrip('/') for url in updated_relay_list)
+        self.log.debug(f"Updating relays, new list: {updated_relay_list}" )
+        # add relays that are not already connected
+        new_relays = []
+        for relay_url in updated_relay_list:
+            if relay_url in [relay.url.strip().rstrip('/') for relay in self.relays]:
+                continue
+            new_relay = Relay(
+                relay_url,
+                origin=self._origin,
+                private_key=self._private_key,
+                log=self.log,
+                ssl_context=self._ssl_context,
+                proxy=self._proxy,
+                connect_timeout=self._connect_timeout)
+            new_relays.append(new_relay)
+        if new_relays:
+            changes = True
+            async with self._connectlock:
+                await self.broadcast(new_relays, 'connect', self.taskgroup)
+                connected_relays = [relay for relay in new_relays if relay.connected]
+                self.relays.extend(connected_relays)
+                self.log.info("Connected to %d out of %d new relays", len(connected_relays), len(new_relays))
+
+        # remove relays that are no longer in the updated list
+        remove_relays: List[Relay] = []
+        for relay in self.relays:
+            if relay.url.strip().rstrip('/') not in updated_relay_list:
+                remove_relays.append(relay)
+        if remove_relays:
+            changes = True
+            async with self._connectlock:
+                await self.broadcast(remove_relays, 'close', self.taskgroup)
+                self.relays = [relay for relay in self.relays if relay not in remove_relays]
+                self.log.info("Removed %d relays", len(remove_relays))
+
+        # refresh subscriptions
+        if changes:
+            for sub_id, subscription in self.subscriptions.items():
+                await self.subscribe(sub_id, *subscription.filters)
 
     async def __aenter__(self):
         await self.taskgroup.__aenter__()
@@ -314,4 +400,6 @@ class Manager:
                     break
         await self.unsubscribe(sub_id)
 
+class NotInitialized(Exception):
+    pass
 
