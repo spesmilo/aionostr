@@ -21,10 +21,12 @@ class Relay:
     """
     Interact with a relay
     """
-    def __init__(self, url, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None, client=None):
+    def __init__(self, url, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None,
+                 proxy: Optional[ProxyConnector]=None):
         self.log = log or logging.getLogger(__name__)
         self.url = url
-        self.client = client
+        self.proxy = proxy
+        self.client = None  # type: Optional[ClientSession]
         self.ws = None
         self.receive_task = None
         self.subscriptions = defaultdict(lambda: Subscription(filters=[], queue=asyncio.Queue()))
@@ -37,6 +39,8 @@ class Relay:
         self.ssl_context = ssl_context
 
     async def connect(self, taskgroup = None, retries=2):
+        if not self.client:
+            self.client = ClientSession(connector=self.proxy)
         for i in range(retries):
             try:
                 self.ws = await asyncio.wait_for(
@@ -47,7 +51,8 @@ class Relay:
                     ),
                     self.connect_timeout)
             except Exception as e:
-                self.log.debug(f"Exception on connect: {e}")
+                self.log.debug(f"Exception on connect: {e!r}")
+                await self.ws.close()
                 await asyncio.sleep(i ** 2)
             else:
                 break
@@ -73,10 +78,16 @@ class Relay:
     async def close(self, taskgroup = None):
         if self.receive_task:
             self.receive_task.cancel() # fixme: this will cancel taskgroup
-        if self.ws and taskgroup:
-            await taskgroup.spawn(self.ws.close())
-        elif self.ws:
-            await self.ws.close()
+        if self.ws:
+            if taskgroup:
+                await taskgroup.spawn(self.ws.close())
+            else:
+                await self.ws.close()
+        if self.client:
+            if taskgroup:
+                await taskgroup.spawn(self.client.close())
+            else:
+                await self.client.close()
         self.connected = False
 
     async def _receive_messages(self):
@@ -84,7 +95,7 @@ class Relay:
             try:
                 message = await asyncio.wait_for(self.ws.receive_json(), 30.0)
 
-                self.log.debug(message)
+                self.log.debug(message)  # FIXME spammy (or at least log which relay it's coming from)
                 if message[0] == 'EVENT':
                     await self.subscriptions[message[1]].queue.put(Event(**message[2]))
                 elif message[0] == 'EOSE':
@@ -103,8 +114,8 @@ class Relay:
                 await self.reconnect()
             except asyncio.TimeoutError:
                 continue
-            except:
-                import traceback; traceback.print_exc()
+            except Exception as e:
+                self.log.exception("")
                 await asyncio.sleep(5)
 
     async def send(self, message):
@@ -176,7 +187,6 @@ class Manager:
                  proxy: Optional[ProxyConnector]=None):
         self.log = log or logging.getLogger(__name__)
         self.proxy = proxy
-        self.client = ClientSession(connector=proxy)
         connect_timeout = 1.0 if not proxy else 5.0
         self.relays = [Relay(
             r,
@@ -184,7 +194,7 @@ class Manager:
             private_key=private_key,
             log=log,
             ssl_context=ssl_context,
-            client=self.client,
+            proxy=proxy,
             connect_timeout=connect_timeout)
             for r in (relays or [])]
         self.subscriptions = {}
@@ -246,7 +256,9 @@ class Manager:
 
     async def close(self):
         await self.broadcast('close', self.taskgroup)
-        await self.client.close()
+        for relay in self.relays:
+            await relay.close()
+        await self.taskgroup.cancel_remaining()
 
     async def add_event(self, event, timeout=5):
         """ waits until one of the tasks succeeds, or raises timeout"""
@@ -283,7 +295,6 @@ class Manager:
 
     async def __aexit__(self, ex_type, ex, tb):
         await self.close()
-        await self.taskgroup.cancel_remaining()
         await self.taskgroup.__aexit__(ex_type, ex, tb)
 
     async def get_events(self, *filters, only_stored=True, single_event=False):
