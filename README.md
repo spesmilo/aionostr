@@ -6,7 +6,7 @@ asyncio nostr client
 Free software: BSD license
 Original Author: Dave St.Germain
 Fork Author/Maintainer: The Electrum Developers
-Language: Python (>= 3.8)
+Language: Python (>= 3.10)
 ```
 
 
