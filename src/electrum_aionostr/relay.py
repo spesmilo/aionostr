@@ -69,6 +69,7 @@ class Relay:
         else:
             self.log.info(f"Cannot connect to {self.url}")
             await self.client.close()
+            self.client = None
             return False
         if self.receive_task is None and taskgroup:
             self.receive_task = await taskgroup.spawn(self._receive_messages())
