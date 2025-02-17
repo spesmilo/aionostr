@@ -7,6 +7,7 @@ from json import dumps, loads
 from collections import defaultdict, namedtuple
 from typing import Optional, Iterable, Dict, List, Set, Coroutine, Any
 from dataclasses import dataclass
+from .util import normalize_url
 
 from aiohttp import ClientSession, client_exceptions
 from aiohttp_socks import ProxyConnector
@@ -29,10 +30,10 @@ class Relay:
     """
     Interact with a relay
     """
-    def __init__(self, url, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None,
+    def __init__(self, url: str, origin:str = '', private_key:str='', connect_timeout: float=1.0, log=None, ssl_context=None,
                  proxy: Optional[ProxyConnector]=None):
         self.log = log or logging.getLogger(__name__)
-        self.url = url
+        self.url = normalize_url(url)
         self.proxy = proxy
         self.client = None  # type: Optional[ClientSession]
         self.ws = None
@@ -333,12 +334,12 @@ class Manager:
             raise NotInitialized("Manager is not connected")
 
         changes: bool = False
-        updated_relay_list: Set[str] = set(url.strip().rstrip('/') for url in updated_relay_list)
+        updated_relay_list: Set[str] = set(normalize_url(url) for url in updated_relay_list)
         self.log.debug(f"Updating relays, new list: {updated_relay_list}" )
         # add relays that are not already connected
         new_relays = []
         for relay_url in updated_relay_list:
-            if relay_url in [relay.url.strip().rstrip('/') for relay in self.relays]:
+            if relay_url in [relay.url for relay in self.relays]:
                 continue
             new_relay = Relay(
                 relay_url,
@@ -360,7 +361,7 @@ class Manager:
         # remove relays that are no longer in the updated list
         remove_relays: List[Relay] = []
         for relay in self.relays:
-            if relay.url.strip().rstrip('/') not in updated_relay_list:
+            if relay.url not in updated_relay_list:
                 remove_relays.append(relay)
         if remove_relays:
             changes = True
