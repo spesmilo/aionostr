@@ -196,10 +196,11 @@ class Manager:
                  private_key=None,
                  log=None,
                  ssl_context=None,
-                 proxy: Optional[ProxyConnector]=None):
+                 proxy: Optional[ProxyConnector]=None,
+                 connect_timeout: Optional[int]=None):
         self.log = log or logging.getLogger(__name__)
         self._proxy = proxy
-        self._connect_timeout = 1.0 if not proxy else 5.0
+        self._connect_timeout = connect_timeout if connect_timeout else 5 if not proxy else 10
         self._ssl_context = ssl_context
         self._private_key = private_key
         self._origin = origin
@@ -252,7 +253,7 @@ class Manager:
     async def broadcast(self, relays, func, *args, **kwargs):
         """ returns when all tasks completed. timeout is enforced """
         results = []
-        timeout = 5 if not self._proxy else 15
+        timeout = self._connect_timeout + 2
         for relay in relays:
             coro = asyncio.wait_for(getattr(relay, func)(*args, **kwargs), timeout=timeout)
             results.append(await self.taskgroup.spawn(coro))
