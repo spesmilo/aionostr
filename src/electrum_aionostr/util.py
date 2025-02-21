@@ -97,3 +97,6 @@ def to_nip19(ntype: str, payload: str, relays=None, author=None, kind=None):
         data = payload.encode()
     converted_bits = bech32.convertbits(data, 8, 5)
     return bech32.bech32_encode(ntype, converted_bits, bech32.Encoding.BECH32)
+
+def normalize_url(url: str) -> str:
+    return url.strip().rstrip('/')
