@@ -1,5 +1,5 @@
 import unittest
-from os import getrandom
+import os
 
 from electrum_aionostr.event import Event
 from electrum_aionostr.key import PrivateKey
@@ -7,8 +7,8 @@ from electrum_aionostr.key import PrivateKey
 class TestEvent(unittest.TestCase):
 
     def test_verify(self):
-        privkey1 = PrivateKey(getrandom(32))
-        privkey2 = PrivateKey(getrandom(32))
+        privkey1 = PrivateKey(os.urandom(32))
+        privkey2 = PrivateKey(os.urandom(32))
 
         event = Event(
             pubkey=privkey1.public_key.hex(),
